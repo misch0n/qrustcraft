@@ -50,7 +50,7 @@ cargo run -p qrustcraft-xr --features wgpu-bridge --example stereo_smoke
 - `crates/qrustcraft-xr`: OpenXR runtime layer and the Vulkan-to-wgpu bridge.
 - `crates/qrustcraft-quest`: the Android/Quest app (NativeActivity). `android/` has its manifest; `tools/` the build and file-push scripts.
 - `third_party/horizon.pin`: the Horizon commit we build against. `tools/setup-horizon.sh` fetches it into `third_party/horizon` and applies `patches/horizon/*.patch`.
-- `docs/`: design and integration notes.
+- `docs/`: design and integration notes; [docs/TODO.md](docs/TODO.md) is the list for the next session.
 
 ## Licence and credits
 
