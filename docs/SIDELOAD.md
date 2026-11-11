@@ -28,4 +28,6 @@ Edition with Horizon, then push them:
 tools/push-game-files.sh /path/to/.local/horizon-client/26.3
 ```
 
-They land in `/sdcard/Android/data/dev.qrustcraft.quest/files/horizon-client/26.3`.
+They land in `/sdcard/Android/data/dev.qrustcraft.horizon/files/.local/horizon-client/26.3`, the
+Horizon APK's files folder, which is where it looks for them. Install and launch the Horizon APK once
+first, so Android creates that folder for the app.

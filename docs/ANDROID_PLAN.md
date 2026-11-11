@@ -7,7 +7,7 @@ a Quest 3 with no PC attached.
 
 | Stage | Result | State |
 |---|---|---|
-| 1. Smoke APK | An APK that opens an OpenXR session on the Quest, clears each eye to a colour, and buzzes a controller on trigger. Proves OpenXR + Vulkan + wgpu + Touch input on the device, with no Minecraft code | **Built and signed** (`target/qrustcraft-quest.apk`, inspected: arm64, correct entry point, loader bundled); **not yet run on a headset** |
+| 1. Smoke APK | An APK that opens an OpenXR session on the Quest, clears each eye to a colour, and buzzes a controller on trigger. Proves OpenXR + Vulkan + wgpu + Touch input on the device, with no Minecraft code | **Built and signed** (`target/qrustcraft-smoke.apk`, inspected: arm64, correct entry point, loader bundled); **not yet run on a headset** |
 | 2a. Horizon on Android | Horizon's game loop runs in a NativeActivity with its own files, as a flat panel | **APK built and signed** (release, stripped, 35 MB; arm64; entry point exported); **never run on a device** |
 | 3. VR integration | Stereo views, hands, input, GUI panel (`INTEGRATION.md`) | Designed; core logic done and tested |
 | 4. Quest performance | Playable frame rate on Adreno (Quest 3) | Not started |
@@ -65,7 +65,8 @@ Still to do for stage 2 (type-checking is not linking or running):
    `tools/push-game-files.sh` copies the result into the app's folder over adb. Mojang's files are never
    inside the APK. (Horizon issue #1750 is working toward Java-free preparation.)
 4. **Paths.** Saves, options and `.local/horizon-client/26.3` are relative to the working directory;
-   pointing the working directory at `/sdcard/Android/data/dev.qrustcraft.quest/files/` covers them.
+   pointing the working directory at `/sdcard/Android/data/dev.qrustcraft.horizon/files/` covers them
+   (so the game files go to `files/.local/horizon-client/26.3`, which `tools/push-game-files.sh` does).
 5. **Audio** (`cpal` 0.16 supports Android via Oboe), and **threads/memory** (Horizon issue #1751): needs
    a run on the device.
 6. **Rendering**: Stage 3's per-view passes and the asymmetric-FOV shader fixes.

@@ -21,7 +21,9 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/target/apk-$variant"
 bt="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)"
 platform="$(ls -d "$ANDROID_HOME"/platforms/android-* | sort -V | tail -1)"
+# PROFILE=release (default) or debug; any other Cargo profile name works too.
 profile="${PROFILE:-release}"
+case "$profile" in debug) cargo_profile=dev ;; *) cargo_profile="$profile" ;; esac
 llvm="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin"
 # API 29 is the manifest's minSdk, and the first level with libaaudio (Horizon's audio needs it).
 api=29
@@ -35,14 +37,14 @@ case "$variant" in
     echo "== building native library ($profile)"
     # The `android` feature links libopenxr_loader.so, so the linker must find it.
     (cd "$root" && RUSTFLAGS="${RUSTFLAGS:-} -L native=$(dirname "$OPENXR_LOADER")" \
-      cargo ndk -t arm64-v8a -P $api -o "$out/jni" build -p qrustcraft-quest --"$profile")
+      cargo ndk -t arm64-v8a -P $api -o "$out/jni" build -p qrustcraft-quest --profile "$cargo_profile")
     cp "$OPENXR_LOADER" "$out/lib/arm64-v8a/libopenxr_loader.so"
     ;;
   horizon)
     [ -d "$root/third_party/horizon/crates" ] || { echo "run tools/setup-horizon.sh first"; exit 1; }
     manifest="$root/android/AndroidManifest.horizon.xml"; lib=libqrustcraft_horizon.so
     echo "== building Horizon for Android ($profile): this takes a while"
-    (cd "$root/app" && cargo ndk -t arm64-v8a -P $api -o "$out/jni" build --"$profile")
+    (cd "$root/app" && cargo ndk -t arm64-v8a -P $api -o "$out/jni" build --profile "$cargo_profile")
     ;;
   *) echo "unknown variant: $variant (smoke|horizon)"; exit 1 ;;
 esac
