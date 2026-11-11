@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["crates/qrustcraft-vr", "crates/qrustcraft-xr"]
+
+[workspace.package]
+edition = "2024"
+license = "MIT"
+rust-version = "1.85"
+
+[workspace.dependencies]
+# Same major as Horizon's workspace, so matrices cross the seam without conversion.
+glam = "0.30"

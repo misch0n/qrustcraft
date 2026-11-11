@@ -1,0 +1,27 @@
+[package]
+name = "qrustcraft-xr"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "OpenXR runtime layer for a Rust Minecraft: instance, Touch actions, frame loop, and a Vulkan bridge into wgpu."
+
+[features]
+default = []
+# Bridge OpenXR's Vulkan device and swapchain images into wgpu (what Horizon renders with).
+wgpu-bridge = ["dep:wgpu", "dep:ash"]
+# Android / Quest standalone: link the vendor loader instead of dlopen-ing one.
+android = ["openxr/linked"]
+
+[dependencies]
+qrustcraft-vr = { path = "../qrustcraft-vr" }
+openxr = { version = "0.22", default-features = false, features = ["loaded"] }
+glam.workspace = true
+thiserror = "2"
+log = "0.4"
+ash = { version = "0.38", optional = true }
+wgpu = { version = "30.0.1", optional = true, default-features = false, features = ["std", "vulkan"] }
+
+[[example]]
+name = "stereo_smoke"
+required-features = ["wgpu-bridge"]

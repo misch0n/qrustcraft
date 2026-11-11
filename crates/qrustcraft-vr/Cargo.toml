@@ -1,0 +1,10 @@
+[package]
+name = "qrustcraft-vr"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Engine-agnostic VR core for a Rust Minecraft: stereo math, room-scale rig, locomotion, input intents, interaction."
+
+[dependencies]
+glam.workspace = true
