@@ -20,8 +20,10 @@ does instead, with a status per step.
 | `qrustcraft-xr`: OpenXR instance, Touch actions, frame loop | Compiles; **not yet run on a headset** |
 | `qrustcraft-xr` `wgpu-bridge`: OpenXR-created Vulkan device and swapchain images exposed to wgpu 30 | Compiles against wgpu 30.0.1; **not yet run on a headset** |
 | `stereo_smoke` example: end-to-end headset check with no Minecraft | Compiles; **not yet run on a headset** |
+| `qrustcraft-quest`: NativeActivity app that runs the smoke test on the headset (stage 1 APK) | Type-checks for `aarch64-linux-android`; **not linked or run** |
+| APK packaging: manifest, `tools/build-apk.sh`, `tools/push-game-files.sh` | Written; **untested** (needs the Android NDK) |
 | Horizon integration (stereo `ViewSet`, VR input, GUI panel) | Designed, see [docs/INTEGRATION.md](docs/INTEGRATION.md); not started |
-| Quest standalone (Android) | Not started, see roadmap |
+| Horizon on Android (entry point, gating desktop deps, file layout) | Blockers mapped, see [docs/ANDROID_PLAN.md](docs/ANDROID_PLAN.md); not started |
 
 Nothing here has touched real XR hardware yet. Run `stereo_smoke` first; it is the cheapest way to
 find out whether the headset stack works on your machine.
@@ -38,7 +40,7 @@ cargo run -p qrustcraft-xr --features wgpu-bridge --example stereo_smoke
 
 1. **PCVR on Quest 3** (Link, Air Link, Virtual Desktop, ALVR) via desktop OpenXR. Horizon already
    builds for Windows and Linux, so this needs no Android port and is playable on a Quest 3 today.
-2. **Quest standalone**: an Android build of Horizon (`aarch64-linux-android`, Vulkan, Meta's OpenXR
+2. **Quest standalone** (the goal: a SideQuest-installable APK, see [docs/ANDROID_PLAN.md](docs/ANDROID_PLAN.md) and [docs/SIDELOAD.md](docs/SIDELOAD.md)): an Android build of Horizon (`aarch64-linux-android`, Vulkan, Meta's OpenXR
    loader) packaged as an APK. Horizon lists Android as a long-term goal with contributors on the
    first pieces; its game files must be prepared without Java first (Horizon issue #1750).
 
@@ -46,6 +48,7 @@ cargo run -p qrustcraft-xr --features wgpu-bridge --example stereo_smoke
 
 - `crates/qrustcraft-vr`: engine-agnostic VR core, no GPU or OpenXR dependency.
 - `crates/qrustcraft-xr`: OpenXR runtime layer and the Vulkan-to-wgpu bridge.
+- `crates/qrustcraft-quest`: the Android/Quest app (NativeActivity). `android/` has its manifest; `tools/` the build and file-push scripts.
 - `third_party/horizon`: Horizon, pinned as a submodule (`git submodule update --init --depth 1`).
 - `docs/`: design and integration notes.
 

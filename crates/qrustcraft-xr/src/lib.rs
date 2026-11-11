@@ -10,6 +10,8 @@ pub mod context;
 pub mod convert;
 pub mod frame;
 #[cfg(feature = "wgpu-bridge")]
+pub mod smoke;
+#[cfg(feature = "wgpu-bridge")]
 pub mod vulkan;
 
 pub use actions::Controllers;

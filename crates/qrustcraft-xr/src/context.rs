@@ -11,6 +11,9 @@ pub struct XrOptions {
     pub want_hand_tracking: bool,
     /// Ask for a refresh rate (Hz) when the runtime exposes the extension; Quest 3 does 72/80/90/120.
     pub preferred_refresh_hz: Option<f32>,
+    /// Android API level of the device (Quest 3: 32). 0 off Android. wgpu-hal uses it to pick
+    /// driver workarounds.
+    pub android_sdk_version: u32,
 }
 
 impl Default for XrOptions {
@@ -20,6 +23,7 @@ impl Default for XrOptions {
             engine_name: "Horizon".into(),
             want_hand_tracking: false,
             preferred_refresh_hz: Some(90.0),
+            android_sdk_version: 0,
         }
     }
 }
@@ -34,6 +38,7 @@ pub struct XrContext {
     pub max_eye_size: (u32, u32),
     pub runtime: String,
     pub extensions: xr::ExtensionSet,
+    pub android_sdk_version: u32,
 }
 
 pub(crate) const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
@@ -108,6 +113,7 @@ impl XrContext {
             max_eye_size: (v.max_image_rect_width, v.max_image_rect_height),
             runtime: format!("{} {}", props.runtime_name, props.runtime_version),
             extensions: ext,
+            android_sdk_version: opts.android_sdk_version,
         })
     }
 }

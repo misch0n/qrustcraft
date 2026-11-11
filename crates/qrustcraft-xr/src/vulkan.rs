@@ -86,7 +86,7 @@ impl XrVulkan {
                 entry,
                 ash_instance.clone(),
                 VK_VERSION,
-                0,
+                ctx.android_sdk_version,
                 None,
                 inst_exts,
                 flags,

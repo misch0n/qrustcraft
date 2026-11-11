@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/qrustcraft-vr", "crates/qrustcraft-xr"]
+members = ["crates/qrustcraft-vr", "crates/qrustcraft-xr", "crates/qrustcraft-quest"]
 
 [workspace.package]
 edition = "2024"
