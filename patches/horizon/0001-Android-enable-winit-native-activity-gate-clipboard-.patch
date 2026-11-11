@@ -1,0 +1,155 @@
+From a835a693001bea881bd8365459f68f45d866343d Mon Sep 17 00:00:00 2001
+From: qrustcraft <noreply@example.com>
+Date: Wed, 11 Nov 2026 01:32:02 +0000
+Subject: [PATCH] Android: enable winit native-activity, gate clipboard and
+ layout learning, fix shadowed variable in cem.rs
+
+- horizon-client: winit with android-native-activity on target_os=android
+- horizon-client-input: arboard only off Android; Android SystemClipboard keeps text in-game
+- horizon-client-input: learn_layout is a no-op on Android (no key_without_modifiers)
+- horizon-client mobs/cem.rs: a local 'own' shadowed the outer map, so own.insert hit a Vec; rename the local
+---
+ crates/horizon-client-input/Cargo.toml       |  5 ++-
+ crates/horizon-client-input/src/clipboard.rs | 32 ++++++++++++++++++++
+ crates/horizon-client-input/src/keybinds.rs  |  9 ++++++
+ crates/horizon-client/Cargo.toml             |  4 +++
+ crates/horizon-client/src/mobs/cem.rs        |  4 +--
+ 5 files changed, 51 insertions(+), 3 deletions(-)
+
+diff --git a/crates/horizon-client-input/Cargo.toml b/crates/horizon-client-input/Cargo.toml
+index 4454e94..479f8e9 100644
+--- a/crates/horizon-client-input/Cargo.toml
++++ b/crates/horizon-client-input/Cargo.toml
+@@ -10,7 +10,6 @@ description = "The client's input layer: key bindings and their names, mouse, co
+ horizon-client-core = { path = "../horizon-client-core" }
+ winit = "0.30.13"
+ png = "0.18"
+-arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
+ 
+ [dev-dependencies]
+ # The window icon test decodes Horizon's icon.
+@@ -21,3 +20,7 @@ controllers = []
+ 
+ [lints]
+ workspace = true
++
++# No system clipboard backend on Android: `SystemClipboard` keeps text in the game there.
++[target.'cfg(not(target_os = "android"))'.dependencies]
++arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"] }
+diff --git a/crates/horizon-client-input/src/clipboard.rs b/crates/horizon-client-input/src/clipboard.rs
+index eaf2a22..26c0c55 100644
+--- a/crates/horizon-client-input/src/clipboard.rs
++++ b/crates/horizon-client-input/src/clipboard.rs
+@@ -123,6 +123,7 @@ pub trait Clipboard {
+ /// data-control protocol and falls back to X11 (XWayland) on compositors
+ /// without it. When no system clipboard can be reached, text copied in the
+ /// game can still be pasted in the game.
++#[cfg(not(target_os = "android"))]
+ #[derive(Default)]
+ pub struct SystemClipboard {
+     system: Option<arboard::Clipboard>,
+@@ -130,6 +131,7 @@ pub struct SystemClipboard {
+     copied: Option<String>,
+ }
+ 
++#[cfg(not(target_os = "android"))]
+ impl SystemClipboard {
+     /// The text last copied by the game.
+     pub fn copied(&self) -> Option<&str> {
+@@ -143,6 +145,7 @@ impl SystemClipboard {
+     }
+ }
+ 
++#[cfg(not(target_os = "android"))]
+ impl Clipboard for SystemClipboard {
+     fn get(&mut self) -> String {
+         let Some(system) = self.system() else {
+@@ -171,6 +174,35 @@ impl Clipboard for SystemClipboard {
+     }
+ }
+ 
++/// The system clipboard on Android: there is no backend, so text copied in the game can still be
++/// pasted in the game (the same fallback as when no system clipboard can be reached).
++#[cfg(target_os = "android")]
++#[derive(Default)]
++pub struct SystemClipboard {
++    /// The text Horizon last copied (`horizon-ctl status`).
++    copied: Option<String>,
++}
++
++#[cfg(target_os = "android")]
++impl SystemClipboard {
++    /// The text last copied by the game.
++    pub fn copied(&self) -> Option<&str> {
++        self.copied.as_deref()
++    }
++}
++
++#[cfg(target_os = "android")]
++impl Clipboard for SystemClipboard {
++    fn get(&mut self) -> String {
++        self.copied.clone().unwrap_or_default()
++    }
++    fn set(&mut self, text: &str) {
++        if !text.is_empty() {
++            self.copied = Some(text.to_owned());
++        }
++    }
++}
++
+ /// A clipboard in memory.
+ #[derive(Default, Debug)]
+ pub struct MemoryClipboard(pub String);
+diff --git a/crates/horizon-client-input/src/keybinds.rs b/crates/horizon-client-input/src/keybinds.rs
+index 63274cb..b36c738 100644
+--- a/crates/horizon-client-input/src/keybinds.rs
++++ b/crates/horizon-client-input/src/keybinds.rs
+@@ -298,6 +298,15 @@ pub use horizon_client_core::key_display::display_name;
+ /// A key event: what the layout writes on its key, without modifiers, names
+ /// that key from now on (`key_display::learn_layout`), so an AZERTY player's
+ /// Q key shows A.
++#[cfg(target_os = "android")]
++pub fn learn_layout(_event: &winit::event::KeyEvent) {
++    // winit has no `key_without_modifiers` on Android, and a headset has no layout to learn.
++}
++
++/// A key event: what the layout writes on its key, without modifiers, names
++/// that key from now on (`key_display::learn_layout`), so an AZERTY player's
++/// Q key shows A.
++#[cfg(not(target_os = "android"))]
+ pub fn learn_layout(event: &winit::event::KeyEvent) {
+     use winit::keyboard::{Key, PhysicalKey};
+     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+diff --git a/crates/horizon-client/Cargo.toml b/crates/horizon-client/Cargo.toml
+index ce8b41b..4ff1798 100644
+--- a/crates/horizon-client/Cargo.toml
++++ b/crates/horizon-client/Cargo.toml
+@@ -84,6 +84,10 @@ unicode-bidi = "0.3.18"
+ # `LevelStorageAccess.estimateDiskSpace`: usable disk space, without unsafe code on Windows.
+ fs4 = { version = "1.1.0", default-features = false, features = ["sync"] }
+ 
++[target.'cfg(target_os = "android")'.dependencies]
++# winit's Android backend needs one activity implementation chosen. NativeActivity needs no Java.
++winit = { version = "0.30.13", features = ["android-native-activity"] }
++
+ [target.'cfg(unix)'.dependencies]
+ # The server thread's CPU time per tick (`HORIZON_SPIKES`, spans.rs).
+ rustix = { version = "1", default-features = false, features = ["std", "time", "process", "fs"] }
+diff --git a/crates/horizon-client/src/mobs/cem.rs b/crates/horizon-client/src/mobs/cem.rs
+index b97fc78..d102437 100644
+--- a/crates/horizon-client/src/mobs/cem.rs
++++ b/crates/horizon-client/src/mobs/cem.rs
+@@ -157,8 +157,8 @@ impl CemModels {
+             let mut layer = CemLayer::build(part, jem, name, &rules);
+             // A fallback onto another layer (the cat's collar from `cat`) takes the geometry
+             // only: the layer keeps its own texture.
+-            let own = layer_keys(name);
+-            if !own.iter().any(|k| layer_suffix(k) == layer_suffix(&key)) {
++            let name_keys = layer_keys(name);
++            if !name_keys.iter().any(|k| layer_suffix(k) == layer_suffix(&key)) {
+                 layer.texture = None;
+             } else if key == layer_key(name) {
+                 own.insert(key.clone(), (name, path));
+-- 
+2.43.0
+

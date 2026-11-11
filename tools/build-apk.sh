@@ -25,7 +25,9 @@ profile="${PROFILE:-release}"
 rm -rf "$out" && mkdir -p "$out/lib/arm64-v8a"
 
 echo "== building native library ($profile)"
-(cd "$root" && cargo ndk -t arm64-v8a -o "$out/jni" build -p qrustcraft-quest --"$profile")
+# The `android` feature links libopenxr_loader.so, so the linker must find it.
+(cd "$root" && RUSTFLAGS="${RUSTFLAGS:-} -L native=$(dirname "$OPENXR_LOADER")" \
+  cargo ndk -t arm64-v8a -o "$out/jni" build -p qrustcraft-quest --"$profile")
 cp "$out"/jni/arm64-v8a/libqrustcraft_quest.so "$out/lib/arm64-v8a/"
 cp "$OPENXR_LOADER" "$out/lib/arm64-v8a/libopenxr_loader.so"
 

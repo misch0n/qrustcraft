@@ -7,8 +7,8 @@ a Quest 3 with no PC attached.
 
 | Stage | Result | State |
 |---|---|---|
-| 1. Smoke APK | An APK that opens an OpenXR session on the Quest, clears each eye to a colour, and buzzes a controller on trigger. Proves OpenXR + Vulkan + wgpu + Touch input on the device, with no Minecraft code | Code written; type-checks for `aarch64-linux-android`; **not linked, packaged or run** (see "What is missing") |
-| 2. Horizon on Android | Horizon's game loop runs in a NativeActivity with its own files | Not started; blockers listed below |
+| 1. Smoke APK | An APK that opens an OpenXR session on the Quest, clears each eye to a colour, and buzzes a controller on trigger. Proves OpenXR + Vulkan + wgpu + Touch input on the device, with no Minecraft code | **Built and signed** (`target/qrustcraft-quest.apk`, inspected: arm64, correct entry point, loader bundled); **not yet run on a headset** |
+| 2. Horizon on Android | Horizon's game loop runs in a NativeActivity with its own files | Type-checks for Android with 4 small patches; entry point, full link and device run still to do |
 | 3. VR integration | Stereo views, hands, input, GUI panel (`INTEGRATION.md`) | Designed; core logic done and tested |
 | 4. Quest performance | Playable frame rate on Adreno (Quest 3) | Not started |
 
@@ -17,46 +17,45 @@ unknown (does the XR stack work on the device) cheaply. Everything after it buil
 
 ## Stage 2: what stands between Horizon and Android
 
-From a static read of Horizon's manifests and source at `5070174` (nothing was built):
+Measured, not guessed: Horizon at `5070174` was type-checked for `aarch64-linux-android` with the
+NDK (`cargo ndk -t arm64-v8a check -p horizon-client --lib --no-default-features --features
+audio,horizon-extras`). It failed four times, each fixed by a small patch
+(`patches/horizon/0001-*.patch`), and then **passed**:
 
-1. **No Android entry point.** There is no `android_main`, no `android-activity`, and winit is used
-   without its Android backend feature. Horizon needs a NativeActivity entry that creates its
-   window/event loop from an `AndroidApp`. (Horizon already has Android input *state* modules,
-   `android_runtime.rs` and `android_gamepad.rs`, adapted from the Starling project, but nothing
-   feeds them yet.)
-2. **Desktop-only dependencies that need `cfg` gating**: `arboard` (clipboard, in
-   `horizon-client-input`), `hidapi` (in `horizon-dualsense`), `gilrs` (controllers), `open`. Each has
-   to be compiled out on Android; the first two have no Android backend.
-3. **No Java on a Quest.** `horizon-prepare` runs Mojang's own exporters through a JDK. Plan: do the
-   preparation on your PC with Horizon's launcher or `horizon-prepare` (using *your* copy of Minecraft),
-   then `tools/push-game-files.sh` copies the result to the app's private folder over adb. Mojang's
-   files are never inside the APK. (Horizon issue #1750 is working toward Java-free preparation, which
-   would let the headset do this itself.)
-4. **Paths.** Horizon keeps saves and options in the working directory and reads prepared files from
-   `.local/horizon-client/26.3`. On Android both must point into
-   `/sdcard/Android/data/dev.qrustcraft.quest/files/`.
-5. **Audio** is `cpal` 0.16, which supports Android (Oboe), but needs a build check and a
-   permission/latency pass.
-6. **Native code** (`ring` via rustls, `mimalloc`) builds with the NDK's clang; expected fine, to be
-   confirmed on a real build.
-7. **Helper-thread limits and memory.** Horizon issue #1751 covers thread limits on Android. A Quest 3
-   has 8 GB shared with the OS; Horizon's working set (1.1-1.7 GB measured on desktop) fits, but render
-   distance and LOD must default low.
-8. **Rendering.** wgpu's Vulkan backend works on Quest (Adreno). Stage 3's per-view passes and the
-   asymmetric-FOV shader fixes are the main renderer work.
+| # | Failure | Cause | Fix |
+|---|---|---|---|
+| 1 | `android-activity`: "Either game-activity or native-activity must be enabled" | winit's Android backend needs one activity implementation | `winit` with `android-native-activity` on `target_os = "android"` (no Java needed) |
+| 2 | `arboard`: `Clipboard` not found | the clipboard crate has no Android backend | gate it out; Android's `SystemClipboard` keeps text in the game (the same fallback Horizon already has when no system clipboard is reachable) |
+| 3 | `winit::platform::modifier_supplement` missing | `key_without_modifiers` is desktop-only; used to learn keyboard layouts | `learn_layout` is a no-op on Android |
+| 4 | `cem.rs`: `own.insert` on a `Vec` | **an upstream bug**: a local `own` shadows the outer map. Fails on desktop too | rename the local (worth reporting upstream) |
 
-## What is missing here, concretely
+Also: `hidapi` (DualSense) fails its build script on Android, so the `controllers` feature is left
+off, which a VR build wants anyway (controllers come from OpenXR). The 262k-line renderer
+(`horizon-client-render`) compiled for Android with no changes.
 
-This sandbox cannot produce the APK, for two reasons that are decisions for you:
+Still to do for stage 2 (type-checking is not linking or running):
 
-- **The Android NDK and SDK build-tools are not reachable.** They download from `dl.google.com`,
-  which the sandbox's network policy blocks. Without the NDK there is no linker for the
-  `aarch64-linux-android` target. (The Rust target itself is installed and the crate type-checks.)
-- **Building Horizon means executing its code.** A Horizon build runs its `build.rs` scripts and
-  procedural macros, which is third-party code. That was blocked until you approve it.
+1. **Entry point.** Horizon's `main()` is a desktop executable. Android needs `android_main`
+   (`qrustcraft-quest`) that stores the `AndroidApp`, sets the working directory to the app's files
+   folder, and calls `entry::main_with`. Horizon's three `EventLoop::new()` call sites must use
+   `with_android_app(app)` on Android (winit panics otherwise).
+2. **Full compile and link.** A real `cargo ndk build` (codegen plus C dependencies such as `ring`
+   and `mimalloc`) of the whole game: in progress.
+3. **No Java on a Quest.** `horizon-prepare` runs Mojang's exporters through a JDK. Plan: prepare on
+   your PC with Horizon's launcher or `horizon-prepare` (using *your* copy of Minecraft), then
+   `tools/push-game-files.sh` copies the result into the app's folder over adb. Mojang's files are never
+   inside the APK. (Horizon issue #1750 is working toward Java-free preparation.)
+4. **Paths.** Saves, options and `.local/horizon-client/26.3` are relative to the working directory;
+   pointing the working directory at `/sdcard/Android/data/dev.qrustcraft.quest/files/` covers them.
+5. **Audio** (`cpal` 0.16 supports Android via Oboe), and **threads/memory** (Horizon issue #1751): needs
+   a run on the device.
+6. **Rendering**: Stage 3's per-view passes and the asymmetric-FOV shader fixes.
 
-Neither blocks the work you can do on your own PC: `tools/build-apk.sh` is written for exactly this
-and needs only the NDK, SDK build-tools, `cargo-ndk` and the Khronos OpenXR loader.
+## What was blocked, and what you approved
+
+- The Android NDK/SDK come from `dl.google.com`, and the OpenXR loader from Maven Central. You allowed
+  both hosts for the sandbox; with them the stage 1 APK builds here (`tools/build-apk.sh`).
+- Building Horizon runs its build scripts (third-party code). You approved that for this sandbox.
 
 ## Risks, stated plainly
 
