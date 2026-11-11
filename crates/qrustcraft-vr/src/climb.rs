@@ -6,7 +6,7 @@
 //! is not gated to special boots here; *any* surface the game marks climbable works, and the
 //! launch speed is capped by a rule table the server owns.
 
-use crate::{Vec3, history::History};
+use crate::{Pose, Quat, Vec3, history::History, rig::Rig};
 
 pub const BREAK_DISTANCE: f32 = 0.5;
 pub const LAUNCH_WINDOW: f32 = 0.3;
@@ -62,19 +62,21 @@ impl Climber {
         self.latch.is_some()
     }
 
-    /// `hand_room` is the hand in playspace (used for pull and launch so artificial rig motion
-    /// never counts); `hand_world` the same hand in world space; `grab_point` the climbable
-    /// block point under the hand, if any; `grip` whether the hand is squeezing.
+    /// `hand_room` is the hand in playspace: pull and launch are measured there, so artificial
+    /// rig motion never counts, then turned into world axes and units by `rig`. `grab_point` is
+    /// the climbable block point under the hand (world space), if any; `grip` whether the hand is
+    /// squeezing.
     pub fn update(
         &mut self,
         rules: &ClimbRules,
         dt: f32,
+        rig: &Rig,
         hand_room: Vec3,
-        hand_world: Vec3,
         grab_point: Option<Vec3>,
         grip: bool,
     ) -> Climb {
         self.hand_history.push(dt, hand_room);
+        let hand_world = rig.to_world(Pose::new(hand_room, Quat::IDENTITY)).position;
         match (&mut self.latch, grip) {
             (None, true) => {
                 if let Some(p) = grab_point {
@@ -91,14 +93,14 @@ impl Climber {
                     self.latch = None;
                     return Climb::Launch(Vec3::ZERO);
                 }
-                let pull = -(hand_room - l.last_hand);
+                let pull = rig.vector_to_world(l.last_hand - hand_room);
                 l.last_hand = hand_room;
                 Climb::Pull(pull)
             }
             (Some(_), false) => {
                 self.latch = None;
-                let v = (-self.hand_history.net_movement(LAUNCH_WINDOW) * rules.launch_scale)
-                    .clamp_length_max(rules.launch_cap);
+                let net = rig.vector_to_world(self.hand_history.net_movement(LAUNCH_WINDOW));
+                let v = (-net * rules.launch_scale).clamp_length_max(rules.launch_cap);
                 Climb::Launch(v)
             }
             (None, false) => Climb::Free,
@@ -109,33 +111,53 @@ impl Climber {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::DVec3;
 
     const DT: f32 = 1.0 / 90.0;
 
+    /// The world point under a room-space hand, for a grab exactly where the hand is.
+    fn under(rig: &Rig, hand_room: Vec3) -> Option<Vec3> {
+        Some(rig.to_world(Pose::new(hand_room, Quat::IDENTITY)).position)
+    }
+
     #[test]
     fn pulling_the_hand_down_moves_the_player_up() {
-        let mut c = Climber::default();
-        let r = ClimbRules::default();
-        let p = Vec3::new(0.0, 2.0, 0.0);
-        c.update(&r, DT, Vec3::new(0.0, 1.5, 0.0), p, Some(p), true);
-        let Climb::Pull(d) = c.update(&r, DT, Vec3::new(0.0, 1.4, 0.0), p, Some(p), true) else {
+        let (mut c, r, rig) = (Climber::default(), ClimbRules::default(), Rig::default());
+        let start = Vec3::new(0.0, 1.5, 0.0);
+        let p = under(&rig, start);
+        c.update(&r, DT, &rig, start, p, true);
+        let Climb::Pull(d) = c.update(&r, DT, &rig, Vec3::new(0.0, 1.4, 0.0), p, true) else {
             panic!()
         };
-        assert!((d.y - 0.1).abs() < 1e-5, "{d:?}");
+        assert!((d - Vec3::new(0.0, 0.1, 0.0)).length() < 1e-5, "{d:?}");
+    }
+
+    #[test]
+    fn the_pull_is_in_world_axes_and_scale() {
+        // Turned to face west (yaw 90) at double world scale, far from spawn.
+        let rig = Rig {
+            origin: DVec3::new(5000.0, 64.0, -800.0),
+            yaw_deg: 90.0,
+            world_scale: 2.0,
+        };
+        let (mut c, r) = (Climber::default(), ClimbRules::default());
+        let start = Vec3::new(0.0, 1.5, -0.4);
+        let p = under(&rig, start);
+        c.update(&r, DT, &rig, start, p, true);
+        // Pull the hand toward you (room +Z): you move away from it, room -Z, which is world -X.
+        let Climb::Pull(d) = c.update(&r, DT, &rig, start + Vec3::new(0.0, 0.0, 0.05), p, true)
+        else {
+            panic!()
+        };
+        assert!((d - Vec3::new(-0.1, 0.0, 0.0)).length() < 1e-4, "{d:?}");
     }
 
     #[test]
     fn no_climbable_no_latch() {
         let mut c = Climber::default();
+        let rig = Rig::default();
         assert_eq!(
-            c.update(
-                &ClimbRules::default(),
-                DT,
-                Vec3::ZERO,
-                Vec3::ZERO,
-                None,
-                true
-            ),
+            c.update(&ClimbRules::default(), DT, &rig, Vec3::ZERO, None, true),
             Climb::Free
         );
         assert!(!c.is_latched());
@@ -143,14 +165,13 @@ mod tests {
 
     #[test]
     fn straying_breaks_the_latch() {
-        let mut c = Climber::default();
-        let r = ClimbRules::default();
-        c.update(&r, DT, Vec3::ZERO, Vec3::ZERO, Some(Vec3::ZERO), true);
+        let (mut c, r, rig) = (Climber::default(), ClimbRules::default(), Rig::default());
+        c.update(&r, DT, &rig, Vec3::ZERO, Some(Vec3::ZERO), true);
         assert!(c.is_latched());
         c.update(
             &r,
             DT,
-            Vec3::ZERO,
+            &rig,
             Vec3::new(0.0, 0.0, 0.9),
             Some(Vec3::ZERO),
             true,
@@ -160,21 +181,25 @@ mod tests {
 
     #[test]
     fn letting_go_mid_pull_launches_and_is_capped() {
-        let mut c = Climber::default();
-        let r = ClimbRules::default();
-        let p = Vec3::ZERO;
-        c.update(&r, DT, Vec3::new(0.0, 1.5, 0.0), p, Some(p), true);
+        let (mut c, r) = (Climber::default(), ClimbRules::default());
+        let rig = Rig {
+            yaw_deg: -135.0,
+            ..Rig::default()
+        };
+        let start = Vec3::new(0.0, 1.5, 0.0);
+        let p = under(&rig, start);
+        c.update(&r, DT, &rig, start, p, true);
         for k in 1..=20 {
             c.update(
                 &r,
                 DT,
+                &rig,
                 Vec3::new(0.0, 1.5 - 0.02 * k as f32, 0.0),
                 p,
-                Some(p),
                 true,
             );
         }
-        let Climb::Launch(v) = c.update(&r, DT, Vec3::new(0.0, 1.1, 0.0), p, Some(p), false) else {
+        let Climb::Launch(v) = c.update(&r, DT, &rig, Vec3::new(0.0, 1.1, 0.0), p, false) else {
             panic!()
         };
         assert!(v.y > 0.0 && v.length() <= r.launch_cap + 1e-5, "{v:?}");

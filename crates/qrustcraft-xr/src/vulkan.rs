@@ -66,7 +66,11 @@ impl XrVulkan {
             let info = vk::InstanceCreateInfo::default()
                 .application_info(&app)
                 .enabled_extension_names(&inst_ext_ptrs);
-            let gipa = std::mem::transmute(entry.static_fn().get_instance_proc_addr);
+            // Same C signature; ash and openxr-sys just spell the instance handle differently.
+            let gipa = std::mem::transmute::<
+                vk::PFN_vkGetInstanceProcAddr,
+                xr::sys::platform::VkGetInstanceProcAddr,
+            >(entry.static_fn().get_instance_proc_addr);
             let raw = ctx
                 .instance
                 .create_vulkan_instance(ctx.system, gipa, &info as *const _ as *const _)?
@@ -199,8 +203,22 @@ impl XrVulkan {
     }
 }
 
+/// Colour formats an eye swapchain can use, best first, with their wgpu twins. sRGB, so the
+/// compositor shows the game's colours as a desktop window would.
+const EYE_FORMATS: [(vk::Format, wgpu::TextureFormat); 2] = [
+    (
+        vk::Format::R8G8B8A8_SRGB,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ),
+    (
+        vk::Format::B8G8R8A8_SRGB,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    ),
+];
+
 /// A stereo swapchain: one image with two array layers (layer 0 = left eye, 1 = right), exposed
-/// to wgpu as textures. Render each eye into `view(image, eye)`.
+/// to wgpu as textures. Render each eye into `view(image, eye)`; `format` is what the runtime
+/// offered.
 pub struct EyeSwapchain {
     pub handle: xr::Swapchain<xr::Vulkan>,
     pub textures: Vec<wgpu::Texture>,
@@ -209,15 +227,21 @@ pub struct EyeSwapchain {
 }
 
 impl EyeSwapchain {
-    pub const VK_FORMAT: vk::Format = vk::Format::R8G8B8A8_SRGB;
-    pub const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
-
     pub fn new(vk: &XrVulkan, session: &xr::Session<xr::Vulkan>, size: (u32, u32)) -> Result<Self> {
+        let offered = session.enumerate_swapchain_formats()?;
+        let (vk_format, format) = EYE_FORMATS
+            .into_iter()
+            .find(|(f, _)| offered.iter().any(|&o| i64::from(o) == i64::from(f.as_raw())))
+            .ok_or_else(|| {
+                Error::Graphics(format!(
+                    "the runtime offers no sRGB RGBA8/BGRA8 swapchain format (offered VkFormats {offered:?})"
+                ))
+            })?;
         let handle = session.create_swapchain(&xr::SwapchainCreateInfo {
             create_flags: xr::SwapchainCreateFlags::EMPTY,
             usage_flags: xr::SwapchainUsageFlags::COLOR_ATTACHMENT
                 | xr::SwapchainUsageFlags::SAMPLED,
-            format: Self::VK_FORMAT.as_raw() as _,
+            format: vk_format.as_raw() as _,
             sample_count: 1,
             width: size.0,
             height: size.1,
@@ -235,7 +259,7 @@ impl EyeSwapchain {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: Self::FORMAT,
+            format,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         };
@@ -245,7 +269,7 @@ impl EyeSwapchain {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: Self::FORMAT,
+            format,
             usage: wgpu::TextureUses::COLOR_TARGET | wgpu::TextureUses::RESOURCE,
             memory_flags: hal::MemoryFlags::empty(),
             view_formats: vec![],
@@ -277,7 +301,7 @@ impl EyeSwapchain {
             handle,
             textures,
             size,
-            format: Self::FORMAT,
+            format,
         })
     }
 

@@ -146,11 +146,11 @@ impl Controllers {
         session.sync_actions(&[(&self.set).into()])?;
         let mut states = [ControllerState::default(); 2];
         let mut poses = HandPoses::default();
-        for i in 0..2 {
+        for (i, state) in states.iter_mut().enumerate() {
             let path = self.paths[i];
             let tracked = self.grip_pose.is_active(session, path)?;
             let s = self.stick.state(session, path)?.current_state;
-            states[i] = ControllerState {
+            *state = ControllerState {
                 tracked,
                 stick: Vec2::new(s.x, s.y),
                 stick_click: self.stick_click.state(session, path)?.current_state,

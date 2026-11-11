@@ -2,8 +2,12 @@
 
 State at the end of the last session (branch `claude/lucid-babbage-3w7esu`):
 
-- `qrustcraft-vr`: 71 tests passing (rig, projection, input, posture, bow, climb, swing, teleport,
-  GUI panel, pose protocol).
+- `qrustcraft-vr`: 87 tests passing (rig, projection, input, posture, bow, climb, swing, teleport,
+  GUI panel, pose protocol). A review pass fixed: climbing in room axes instead of world axes, f32
+  rig origin (head jitter far from spawn), swings from tracking jumps, f32 gesture clock, teleports
+  onto wall sides, the rig not following the body vertically, sneak flicker, GUI cursor edges,
+  untracked hands in the pose packet; and in the XR layer, refresh-rate requests, swapchain format
+  negotiation, API level from the device, no panics on short runtime lists.
 - Two APKs built and signed, **neither run on a headset yet**:
   - `qrustcraft-smoke.apk`: OpenXR + Vulkan + wgpu + Touch input test. Flat colours, no Minecraft.
   - `qrustcraft-horizon.apk`: Horizon as an Android app (a flat panel, not VR). 35 MB.
@@ -39,7 +43,8 @@ saved on the environment, so the downloads will work.
 - [ ] Device from OpenXR: Horizon opens its wgpu device through `XrVulkan::create` when VR is on.
 - [ ] `ViewSet::stereo([View; 2], cull)` in `gfx/view.rs`; draw the world pass per view into the
       swapchain's array layers. TAA and frame generation off in VR at first.
-- [ ] Camera from the head (`Rig::frame`, `head_yaw_pitch`); room-scale walking via `Rig::absorb_walk`.
+- [ ] Camera from the head (`Rig::frame` with Horizon's `camera: DVec3` as the camera origin,
+      `head_yaw_pitch`); room-scale walking via `Rig::absorb_walk`, fed every entity move.
 - [ ] Held item at the grip pose; aim and swing from `interact` (`SwingTracker`, `ToolClass::reach`).
 - [ ] `input::Intent` into the gamepad action path; posture (sneak/crawl/jump), bow, climbing.
 - [ ] GUI panel: render screens to a texture, draw on the quad, ray cursor clicks real widgets.

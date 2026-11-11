@@ -39,6 +39,8 @@ pub struct XrContext {
     pub runtime: String,
     pub extensions: xr::ExtensionSet,
     pub android_sdk_version: u32,
+    /// From [`XrOptions`]; applied by [`XrContext::request_refresh_rate`].
+    pub preferred_refresh_hz: Option<f32>,
 }
 
 pub(crate) const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;
@@ -96,7 +98,12 @@ impl XrContext {
         )?;
         let props = instance.properties()?;
         let system = instance.system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)?;
-        let blend_mode = instance.enumerate_environment_blend_modes(system, VIEW_TYPE)?[0];
+        // The runtime lists its preferred mode first; an empty list is a broken runtime.
+        let blend_mode = instance
+            .enumerate_environment_blend_modes(system, VIEW_TYPE)?
+            .first()
+            .copied()
+            .ok_or(Error::Xr(xr::sys::Result::ERROR_VALIDATION_FAILURE))?;
         let views = instance.enumerate_view_configuration_views(system, VIEW_TYPE)?;
         let v = views
             .first()
@@ -114,6 +121,65 @@ impl XrContext {
             runtime: format!("{} {}", props.runtime_name, props.runtime_version),
             extensions: ext,
             android_sdk_version: opts.android_sdk_version,
+            preferred_refresh_hz: opts.preferred_refresh_hz,
         })
+    }
+
+    /// Ask the runtime for the supported refresh rate closest to `preferred_refresh_hz`
+    /// (`XR_FB_display_refresh_rate`). Returns the rate asked for, or `None` when there is no
+    /// preference or the runtime lacks the extension. A refusal is logged, not fatal: the headset
+    /// just keeps its default rate.
+    pub fn request_refresh_rate<G>(&self, session: &xr::Session<G>) -> Option<f32> {
+        let want = self.preferred_refresh_hz?;
+        if !self.extensions.fb_display_refresh_rate {
+            return None;
+        }
+        let rates = match session.enumerate_display_refresh_rates() {
+            Ok(r) => r,
+            Err(e) => {
+                log::warn!("cannot list refresh rates: {e}");
+                return None;
+            }
+        };
+        let rate = closest_rate(&rates, want)?;
+        match session.request_display_refresh_rate(rate) {
+            Ok(()) => {
+                log::info!("refresh rate {rate} Hz (wanted {want}, offered {rates:?})");
+                Some(rate)
+            }
+            Err(e) => {
+                log::warn!("refresh rate {rate} Hz refused: {e}");
+                None
+            }
+        }
+    }
+}
+
+/// The offered rate nearest `want` (ties go to the higher rate).
+fn closest_rate(rates: &[f32], want: f32) -> Option<f32> {
+    rates
+        .iter()
+        .copied()
+        .filter(|r| r.is_finite() && *r > 0.0)
+        .min_by(|a, b| {
+            (a - want)
+                .abs()
+                .total_cmp(&(b - want).abs())
+                .then(b.total_cmp(a))
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::closest_rate;
+
+    #[test]
+    fn picks_the_nearest_offered_rate() {
+        let quest3 = [72.0, 80.0, 90.0, 120.0];
+        assert_eq!(closest_rate(&quest3, 90.0), Some(90.0));
+        assert_eq!(closest_rate(&quest3, 100.0), Some(90.0));
+        assert_eq!(closest_rate(&quest3, 105.0), Some(120.0)); // tie goes up
+        assert_eq!(closest_rate(&quest3, 60.0), Some(72.0));
+        assert_eq!(closest_rate(&[], 90.0), None);
     }
 }

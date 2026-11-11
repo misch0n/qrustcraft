@@ -44,6 +44,11 @@ pub trait World {
     fn standable(&self, feet: Vec3) -> bool;
 }
 
+/// Longest stretch of the arc tested as one segment, so a fast arc cannot skip through a block.
+const PROBE: f32 = 0.05;
+
+/// Trace the arc. It lands only through the *top* of a block: hitting a block's side (a wall)
+/// is invalid, because the floor beside a wall is somewhere below the hit, not level with it.
 pub fn trace(world: &dyn World, origin: Vec3, direction: Vec3, cfg: &ArcConfig) -> Arc {
     let mut p = origin;
     let mut v = direction.normalize() * cfg.speed;
@@ -54,9 +59,22 @@ pub fn trace(world: &dyn World, origin: Vec3, direction: Vec3, cfg: &ArcConfig) 
         if (next - origin).length() > cfg.max_distance {
             return Arc::Invalid { points };
         }
-        if world.solid(next) {
-            // Landed in a solid: stand on top of the block that was hit.
-            let feet = Vec3::new(p.x, next.y.floor() + 1.0, p.z);
+        let n = ((next - p).length() / PROBE).ceil().max(1.0) as usize;
+        let mut prev = p;
+        for k in 1..=n {
+            let q = p.lerp(next, k as f32 / n as f32);
+            if !world.solid(q) {
+                prev = q;
+                continue;
+            }
+            points.push(q);
+            let top = q.y.floor() + 1.0;
+            if prev.y < top {
+                // Came in through the side of the block.
+                return Arc::Invalid { points };
+            }
+            // Through the top: stand on it, over the block that was hit.
+            let feet = Vec3::new(q.x, top, q.z);
             points.push(feet);
             return if world.standable(feet) {
                 Arc::Valid {
@@ -115,6 +133,67 @@ mod tests {
             &ArcConfig::default(),
         );
         assert!(matches!(a, Arc::Invalid { .. }));
+    }
+
+    /// Flat floor at y = 64 with a wall three blocks tall and thick across z in [5, 8).
+    struct Wall;
+    impl World for Wall {
+        fn solid(&self, p: Vec3) -> bool {
+            p.y < 64.0 || ((5.0..8.0).contains(&p.z) && p.y < 67.0)
+        }
+        fn standable(&self, feet: Vec3) -> bool {
+            !self.solid(feet) && !self.solid(feet + Vec3::new(0.0, 1.0, 0.0))
+        }
+    }
+
+    #[test]
+    fn hitting_a_wall_side_is_invalid_not_a_floating_landing() {
+        let a = trace(
+            &Wall,
+            Vec3::new(0.0, 65.5, 0.0),
+            Vec3::new(0.0, 0.1, 1.0),
+            &ArcConfig::default(),
+        );
+        assert!(matches!(a, Arc::Invalid { .. }), "{a:?}");
+    }
+
+    #[test]
+    fn landing_on_top_of_the_wall_is_valid() {
+        let a = trace(
+            &Wall,
+            Vec3::new(0.0, 66.5, 0.0),
+            Vec3::new(0.0, 0.5, 0.866),
+            &ArcConfig::default(),
+        );
+        match a {
+            Arc::Valid { destination, .. } => {
+                assert!((destination.y - 67.0).abs() < 1e-4, "{destination:?}");
+                assert!((5.0..8.0).contains(&destination.z), "{destination:?}");
+            }
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_fast_falling_arc_lands_on_the_first_block_not_inside_one() {
+        // Thrown hard downward from high up: each step drops well over a block.
+        let cfg = ArcConfig {
+            speed: 40.0,
+            max_distance: 64.0,
+            ..Default::default()
+        };
+        let a = trace(
+            &Wall,
+            Vec3::new(0.0, 80.0, 5.5),
+            Vec3::new(0.0, -1.0, 0.0),
+            &cfg,
+        );
+        match a {
+            Arc::Valid { destination, .. } => {
+                assert!((destination.y - 67.0).abs() < 1e-4, "{destination:?}")
+            }
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]

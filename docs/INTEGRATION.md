@@ -13,7 +13,7 @@ and lens differ."* Its `View` is `{ view, projection (reversed-Z), aspect, tan_h
 
 | Horizon `View` | `qrustcraft_vr::EyeView` |
 |---|---|
-| `view` (camera-relative, includes the eye offset) | `view` from `Rig::frame(.., camera_origin, ..)` |
+| `view` (camera-relative, includes the eye offset) | `view` from `Rig::frame(.., camera_origin, ..)`, with Horizon's `camera: DVec3` as `camera_origin` (the subtraction happens in `f64`) |
 | `projection` (reversed-Z, zero-to-one) | `projection(fov, near, far, Depth::ReversedZeroToOne)` |
 | `aspect` | `EyeView::aspect()` |
 | `tan_half_fov` | `EyeView::tan_half_fov_y()`, but see asymmetric FOV below |
@@ -33,7 +33,9 @@ and lens differ."* Its `View` is `{ view, projection (reversed-Z), aspect, tan_h
    already treats the surface as one output among several.
 4. **Camera from the head.** Each frame: `Rig::frame(...)` gives eye poses; `head_yaw_pitch` gives
    `Frame::yaw/pitch` for gameplay (`camera.rs`: `Camera`, `CameraEntity`). Feed
-   `Rig::absorb_walk` the entity's post-collision delta so room-scale walking respects walls.
+   `Rig::absorb_walk` the entity's post-collision delta (every move, not only walking: the rig
+   rides up and down with the body) so room-scale walking respects walls. `Frame`'s head and
+   hands are camera-relative like the eyes; `Rig::to_world` / `point_to_world` give world ones.
 5. **Hands.** The first-person hand (`hand_view_proj`, gfx.rs ~8521) becomes the held item at the
    grip pose. Aim rays come from `interact::aim_ray`; swing detection decides attacks.
 6. **Input.** Map `input::Intent` onto the same actions the gamepad path feeds

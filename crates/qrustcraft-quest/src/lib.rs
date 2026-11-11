@@ -12,8 +12,9 @@ use qrustcraft_xr::{XrContext, XrOptions, smoke};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-/// Quest 2/3 run Android 12L (API 32).
-const QUEST_SDK: u32 = 32;
+/// Assumed when the configuration reports no API level: Quest 2/3 shipped on Android 12L (32).
+/// Newer Quest system software is on later Android versions, so read the real one when we can.
+const FALLBACK_SDK: u32 = 32;
 
 #[unsafe(no_mangle)]
 fn android_main(app: AndroidApp) {
@@ -24,8 +25,13 @@ fn android_main(app: AndroidApp) {
     );
     log::info!("QRustCraft starting");
 
+    let sdk = u32::try_from(app.config().sdk_version())
+        .ok()
+        .filter(|&v| v > 0)
+        .unwrap_or(FALLBACK_SDK);
+    log::info!("Android API level {sdk}");
     let opts = XrOptions {
-        android_sdk_version: QUEST_SDK,
+        android_sdk_version: sdk,
         ..XrOptions::default()
     };
     let ctx = match XrContext::new(&opts, app.vm_as_ptr(), app.activity_as_ptr()) {

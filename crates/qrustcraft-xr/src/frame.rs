@@ -44,6 +44,20 @@ pub struct FrameState {
     pub eyes: [EyeInput; 2],
 }
 
+impl FrameState {
+    /// A frame with nothing to draw: placeholder poses, to be ended with no layers.
+    fn empty(timing: FrameTiming) -> Self {
+        Self {
+            timing,
+            head: Pose::IDENTITY,
+            eyes: [EyeInput {
+                local: Pose::IDENTITY,
+                fov: qrustcraft_vr::projection::Fov::default(),
+            }; 2],
+        }
+    }
+}
+
 impl<G: xr::Graphics> FrameLoop<G> {
     pub fn new(
         session: xr::Session<G>,
@@ -121,18 +135,19 @@ impl<G: xr::Graphics> FrameLoop<G> {
             should_render: state.should_render,
         };
         if !state.should_render {
-            return Ok(Some(FrameState {
-                timing,
-                head: Pose::IDENTITY,
-                eyes: [EyeInput {
-                    local: Pose::IDENTITY,
-                    fov: qrustcraft_vr::projection::Fov::default(),
-                }; 2],
-            }));
+            return Ok(Some(FrameState::empty(timing)));
         }
-        let (_, views) =
+        let (flags, views) =
             self.session
                 .locate_views(VIEW_TYPE, state.predicted_display_time, &self.space)?;
+        // Without a valid orientation (tracking lost) or a view per eye there is nothing correct
+        // to draw: submit an empty frame, as for `should_render == false`.
+        if views.len() < 2 || !flags.contains(xr::ViewStateFlags::ORIENTATION_VALID) {
+            return Ok(Some(FrameState::empty(FrameTiming {
+                should_render: false,
+                ..timing
+            })));
+        }
         let eye = |v: &xr::View| EyeInput {
             local: convert::pose(v.pose),
             fov: convert::fov(v.fov),

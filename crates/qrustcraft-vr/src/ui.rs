@@ -34,8 +34,10 @@ impl GuiPanel {
             f.normalize()
         };
         let center = head.position + f * distance;
-        // The quad's +Z must point back at the player.
-        let orientation = Quat::from_rotation_arc(Vec3::Z, -f);
+        // The quad's +Z must point back at the player, and its +Y stay up: a pure yaw. (The
+        // shortest arc from +Z is ill-defined when the player faces +Z, and can roll the panel.)
+        let back = -f;
+        let orientation = Quat::from_rotation_y(back.x.atan2(back.z));
         Self {
             center,
             orientation,
@@ -70,9 +72,15 @@ impl GuiPanel {
 }
 
 /// Press/release edges for the cursor, from the pointing hand's trigger.
+///
+/// A press happens only when the trigger goes down *on* the panel: pointing at the panel with the
+/// trigger already held (from mining, say) clicks nothing. Once pressed, the button stays down
+/// while the ray leaves the panel (a drag), and is released where the cursor was last seen.
 #[derive(Debug, Default)]
 pub struct Cursor {
     down: bool,
+    trigger_was: bool,
+    last: Option<Vec2>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -85,19 +93,23 @@ pub enum CursorEvent {
 impl Cursor {
     pub fn update(&mut self, at: Option<Vec2>, pressed: bool) -> Vec<CursorEvent> {
         let mut out = vec![];
+        let pressed_now = pressed && !self.trigger_was;
+        self.trigger_was = pressed;
         if let Some(p) = at {
+            self.last = Some(p);
             out.push(CursorEvent::Move(p));
-            if pressed && !self.down {
+            if pressed_now && !self.down {
+                self.down = true;
                 out.push(CursorEvent::Press(p));
-            }
-            if !pressed && self.down {
+            } else if !pressed && self.down {
+                self.down = false;
                 out.push(CursorEvent::Release(p));
             }
-            self.down = pressed;
         } else if self.down && !pressed {
-            // Released off-panel: don't leave a button stuck.
+            // Released off-panel: release where the cursor left, so no button stays stuck and
+            // no click lands on whatever sits at the GUI's corner.
             self.down = false;
-            out.push(CursorEvent::Release(Vec2::ZERO));
+            out.push(CursorEvent::Release(self.last.unwrap_or(Vec2::ZERO)));
         }
         out
     }
@@ -160,10 +172,47 @@ mod tests {
             c.update(Some(p), false),
             vec![CursorEvent::Move(p), CursorEvent::Release(p)]
         );
+        // Drag off the panel and let go there: released where the cursor was last.
+        let q = Vec2::new(30.0, 40.0);
         c.update(Some(p), true);
+        c.update(Some(q), true);
+        assert_eq!(c.update(None, true), vec![]);
+        assert_eq!(c.update(None, false), vec![CursorEvent::Release(q)]);
+    }
+
+    #[test]
+    fn a_held_trigger_entering_the_panel_does_not_click() {
+        let mut c = Cursor::default();
+        let p = Vec2::new(10.0, 10.0);
+        c.update(None, true); // mining, trigger held
+        assert_eq!(c.update(Some(p), true), vec![CursorEvent::Move(p)]);
+        assert_eq!(c.update(Some(p), false), vec![CursorEvent::Move(p)]);
         assert_eq!(
-            c.update(None, false),
-            vec![CursorEvent::Release(Vec2::ZERO)]
+            c.update(Some(p), true),
+            vec![CursorEvent::Move(p), CursorEvent::Press(p)]
         );
+    }
+
+    #[test]
+    fn the_panel_stays_upright_whichever_way_you_face() {
+        for yaw in [0.0f32, 0.7, 1.6, 3.0, std::f32::consts::PI, -2.0] {
+            // Head forward: -Z turned by `yaw` about +Y (includes facing +Z exactly).
+            let head = Pose::new(Vec3::new(0.0, 1.7, 0.0), Quat::from_rotation_y(yaw));
+            let p = GuiPanel::in_front_of(&head, 2.0, 2.0, Vec2::new(800.0, 450.0));
+            let up = p.orientation * Vec3::Y;
+            let normal = p.orientation * Vec3::Z;
+            assert!((up - Vec3::Y).length() < 1e-5, "yaw {yaw}: up {up:?}");
+            assert!((normal + head.forward()).length() < 1e-5, "yaw {yaw}");
+            // Looking straight at it hits the middle, top of the view is top of the GUI.
+            let (px, _) = p.hit(head.position, head.forward()).unwrap();
+            assert!(
+                (px - Vec2::new(400.0, 225.0)).length() < 1e-2,
+                "yaw {yaw}: {px:?}"
+            );
+            let (px, _) = p
+                .hit(head.position + Vec3::new(0.0, 0.2, 0.0), head.forward())
+                .unwrap();
+            assert!(px.y < 225.0, "yaw {yaw}: {px:?}");
+        }
     }
 }

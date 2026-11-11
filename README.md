@@ -16,7 +16,7 @@ does instead, with a status per step.
 
 | Piece | State |
 |---|---|
-| `qrustcraft-vr`: stereo projection (asymmetric, reversed-Z), room-scale rig, snap/smooth turn, locomotion, teleport arc, swing-to-mine and per-tool reach, bow, climbing, physical sneak/crawl/jump, floating GUI panel, haptics, comfort vignette, pose network format with server hit validation | Done, 71 unit tests |
+| `qrustcraft-vr`: stereo projection (asymmetric, reversed-Z), room-scale rig, snap/smooth turn, locomotion, teleport arc, swing-to-mine and per-tool reach, bow, climbing, physical sneak/crawl/jump, floating GUI panel, haptics, comfort vignette, pose network format with server hit validation | Done, 87 unit tests |
 | `qrustcraft-xr`: OpenXR instance, Touch actions, frame loop | Compiles; **not yet run on a headset** |
 | `qrustcraft-xr` `wgpu-bridge`: OpenXR-created Vulkan device and swapchain images exposed to wgpu 30 | Compiles against wgpu 30.0.1; **not yet run on a headset** |
 | `stereo_smoke` example: end-to-end headset check with no Minecraft | Compiles; **not yet run on a headset** |

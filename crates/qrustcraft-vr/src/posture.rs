@@ -67,6 +67,10 @@ pub struct PostureSettings {
     /// Jump: rise this far inside `jump_window`, fraction of height (0.1 m of 1.52).
     pub jump_rise: f32,
     pub jump_window: f32,
+    /// Dead band around the sneak and crawl lines, fraction of height (0.02 of 1.65 m is 3 cm):
+    /// a head hovering at a line must not toggle sneak every frame (sneak stops you walking off
+    /// edges, so a flicker can drop you off one).
+    pub hysteresis: f32,
 }
 
 impl Default for PostureSettings {
@@ -77,6 +81,7 @@ impl Default for PostureSettings {
             jump_above: 0.03,
             jump_rise: 0.066,
             jump_window: 0.25,
+            hysteresis: 0.02,
         }
     }
 }
@@ -92,6 +97,8 @@ pub struct Posture {
 pub struct PostureTracker {
     head_y: History,
     jump_latched: bool,
+    sneaking: bool,
+    crawling: bool,
 }
 
 impl Default for PostureTracker {
@@ -99,6 +106,8 @@ impl Default for PostureTracker {
         Self {
             head_y: History::new(1.0),
             jump_latched: false,
+            sneaking: false,
+            crawling: false,
         }
     }
 }
@@ -117,8 +126,13 @@ impl PostureTracker {
         let h = cal.standing;
         let smooth = self.head_y.average_position(0.2).map_or(head_y, |v| v.y);
 
-        let crawl = smooth < s.crawl_fraction * h;
-        let sneak = !crawl && h - smooth > s.sneak_drop * h;
+        // Once in a posture, leaving it takes moving `hysteresis` past its line.
+        let band = s.hysteresis * h;
+        let crawl_line = s.crawl_fraction * h + if self.crawling { band } else { 0.0 };
+        self.crawling = smooth < crawl_line;
+        let sneak_line = h - s.sneak_drop * h + if self.sneaking { band } else { 0.0 };
+        self.sneaking = !self.crawling && smooth < sneak_line;
+        let (crawl, sneak) = (self.crawling, self.sneaking);
 
         // A hop: the head rises quickly *and* ends above standing, *and* the window began upright
         // (its lowest point never went below the sneak line). Standing up from a crouch fails the
@@ -194,6 +208,26 @@ mod tests {
             let p = drive(&mut t, &cal, &[(standing, 0.5)]);
             assert!(p.iter().all(|x| !x.sneak && !x.crawl));
         }
+    }
+
+    #[test]
+    fn hovering_at_the_sneak_line_does_not_flicker() {
+        let cal = Calibration::default();
+        let line = cal.standing * (1.0 - PostureSettings::default().sneak_drop);
+        let mut t = PostureTracker::default();
+        let p = drive(&mut t, &cal, &[(line - 0.02, 0.5), (line - 0.02, 0.5)]);
+        assert!(p.last().unwrap().sneak);
+        // Head bobbing a centimetre either side of the line (`drive` starts each call from
+        // standing, so jump straight back to where we were first).
+        let mut wobble = vec![(line - 0.02, 0.0)];
+        for k in 0..20 {
+            wobble.push((line + if k % 2 == 0 { 0.01 } else { -0.01 }, 0.1));
+        }
+        let p = drive(&mut t, &cal, &wobble);
+        assert!(p.iter().all(|x| x.sneak));
+        // Standing up properly does release it.
+        let p = drive(&mut t, &cal, &[(cal.standing, 0.5), (cal.standing, 0.3)]);
+        assert!(!p.last().unwrap().sneak);
     }
 
     #[test]

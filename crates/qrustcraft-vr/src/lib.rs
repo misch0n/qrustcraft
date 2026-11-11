@@ -23,7 +23,7 @@ pub mod rig;
 pub mod teleport;
 pub mod ui;
 
-pub use glam::{Mat4, Quat, Vec2, Vec3};
+pub use glam::{DVec3, Mat4, Quat, Vec2, Vec3};
 
 #[cfg(test)]
 mod tests {
@@ -112,7 +112,7 @@ impl Hand {
 /// One eye's rendering parameters, already in game space.
 #[derive(Clone, Copy, Debug)]
 pub struct EyeView {
-    /// Eye pose in game space, relative to the origin the caller passed to the rig.
+    /// Eye pose in game axes, relative to the camera origin the caller passed to the rig.
     pub pose: Pose,
     /// World-to-eye matrix (camera-relative when the rig origin is the camera).
     pub view: Mat4,
@@ -139,12 +139,13 @@ impl EyeView {
     }
 }
 
-/// Everything the game needs for one rendered frame.
+/// Everything the game needs for one rendered frame. Every pose is in game axes, relative to the
+/// camera origin passed to [`rig::Rig::frame`] (add it back for world positions).
 #[derive(Clone, Debug)]
 pub struct Frame {
     pub eyes: [EyeView; 2],
-    /// Head pose in game space.
+    /// Head pose, camera-relative.
     pub head: Pose,
-    /// Hand poses in game space, when tracked.
+    /// Hand poses, camera-relative, when tracked.
     pub hands: [Option<Pose>; 2],
 }

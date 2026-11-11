@@ -11,7 +11,7 @@
 //! `position: 3 x i16` (1/4096 m, relative to the player's feet, +-8 m) and
 //! `orientation: u32` (smallest-three quaternion, 10 bits per component + 2-bit index).
 
-use crate::{Pose, Quat, Vec3};
+use crate::{Hand, Pose, Quat, Vec3};
 
 /// Capability bits exchanged in the handshake. A bitset, not a version ordinal: a feature is
 /// available when both sides set its bit, and adding one never needs a "legacy" path.
@@ -33,14 +33,60 @@ pub fn negotiate(client: u32, server: u32) -> u32 {
 pub const FLAG_SEATED: u8 = 1;
 pub const FLAG_LEFT_HANDED: u8 = 2;
 pub const FLAG_CRAWLING: u8 = 4;
+/// The left hand's pose is stale (the controller is not tracked): don't validate or render it.
+pub const FLAG_LEFT_UNTRACKED: u8 = 8;
+pub const FLAG_RIGHT_UNTRACKED: u8 = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PlayerPose {
     pub tick: u32,
     pub flags: u8,
-    /// Head, left hand, right hand, relative to the player's feet.
+    /// Head, left hand, right hand, relative to the player's feet. A hand whose
+    /// `FLAG_*_UNTRACKED` bit is set carries a stale pose; read hands through [`Self::hand`].
     pub head: Pose,
     pub hands: [Pose; 2],
+}
+
+impl PlayerPose {
+    /// The flag bit saying hand `h` is not tracked.
+    pub fn untracked_flag(h: Hand) -> u8 {
+        match h {
+            Hand::Left => FLAG_LEFT_UNTRACKED,
+            Hand::Right => FLAG_RIGHT_UNTRACKED,
+        }
+    }
+
+    /// Build from the hands the client has this tick; an untracked hand keeps `fallback` (its
+    /// last pose, so other players see it hang where it was) and gets its untracked bit.
+    pub fn with_hands(
+        tick: u32,
+        flags: u8,
+        head: Pose,
+        hands: [Option<Pose>; 2],
+        fallback: [Pose; 2],
+    ) -> Self {
+        let mut flags = flags & !(FLAG_LEFT_UNTRACKED | FLAG_RIGHT_UNTRACKED);
+        for (h, p) in [Hand::Left, Hand::Right].into_iter().zip(hands) {
+            if p.is_none() {
+                flags |= Self::untracked_flag(h);
+            }
+        }
+        Self {
+            tick,
+            flags,
+            head,
+            hands: [
+                hands[0].unwrap_or(fallback[0]),
+                hands[1].unwrap_or(fallback[1]),
+            ],
+        }
+    }
+
+    /// Hand `h`'s pose, if it was tracked.
+    pub fn hand(&self, h: Hand) -> Option<Pose> {
+        let i = usize::from(h == Hand::Right);
+        (self.flags & Self::untracked_flag(h) == 0).then_some(self.hands[i])
+    }
 }
 
 pub const PACKET_LEN: usize = 4 + 1 + 3 * 10;
@@ -163,13 +209,16 @@ pub enum Reject {
 }
 
 impl Rules {
-    /// Is this pose physically plausible? Poses are relative to the feet.
+    /// Is this pose physically plausible? Poses are relative to the feet. Untracked hands are
+    /// not checked (their pose is stale, not claimed); they cannot be used to hit either, see
+    /// [`PlayerPose::hand`].
     pub fn validate(&self, p: &PlayerPose) -> Result<(), Reject> {
         if p.head.position.length() > self.max_head_from_entity {
             return Err(Reject::HeadTooFarFromBody);
         }
-        if p.hands
-            .iter()
+        if [Hand::Left, Hand::Right]
+            .into_iter()
+            .filter_map(|h| p.hand(h))
             .any(|h| h.position.distance(p.head.position) > self.max_hand_from_head)
         {
             return Err(Reject::HandTooFar);
@@ -242,6 +291,29 @@ mod tests {
     }
 
     #[test]
+    fn untracked_hands_are_flagged_and_survive_the_wire() {
+        let s = sample();
+        let p = PlayerPose::with_hands(
+            9,
+            FLAG_SEATED | FLAG_LEFT_UNTRACKED,
+            s.head,
+            [None, Some(s.hands[1])],
+            s.hands,
+        );
+        assert_eq!(p.flags, FLAG_SEATED | FLAG_LEFT_UNTRACKED);
+        let d = PlayerPose::decode(&p.encode()).unwrap();
+        assert!(d.hand(Hand::Left).is_none() && d.hand(Hand::Right).is_some());
+        let both = PlayerPose::with_hands(
+            9,
+            p.flags,
+            s.head,
+            [Some(s.hands[0]), Some(s.hands[1])],
+            s.hands,
+        );
+        assert_eq!(both.flags, FLAG_SEATED);
+    }
+
+    #[test]
     fn wrong_length_is_rejected() {
         assert!(PlayerPose::decode(&[0; PACKET_LEN - 1]).is_none());
         assert!(PlayerPose::decode(&[0; PACKET_LEN + 1]).is_none());
@@ -264,6 +336,11 @@ mod tests {
         let mut far_head = sample();
         far_head.head.position = Vec3::new(9.0, 1.6, 0.0);
         assert_eq!(rules.validate(&far_head), Err(Reject::HeadTooFarFromBody));
+        // The same far hand, marked untracked, is a stale pose, not a claim.
+        let mut stale = far_hand;
+        stale.flags |= FLAG_RIGHT_UNTRACKED;
+        assert_eq!(rules.validate(&stale), Ok(()));
+        assert!(stale.hand(Hand::Right).is_none() && stale.hand(Hand::Left).is_some());
     }
 
     #[test]

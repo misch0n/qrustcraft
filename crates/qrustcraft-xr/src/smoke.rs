@@ -39,6 +39,7 @@ pub fn run(
     let vk = XrVulkan::create(&ctx, &wgpu::DeviceDescriptor::default())?;
     log::info!("gpu: {}", vk.adapter.get_info().name);
     let (session, waiter, stream) = vk.create_session(&ctx)?;
+    ctx.request_refresh_rate(&session);
     let controllers = Controllers::new(&ctx.instance, &session)?;
     let mut swapchain = EyeSwapchain::new(&vk, &session, ctx.eye_size)?;
     let mut frames = FrameLoop::new(session, waiter, stream, ctx.blend_mode)?;
@@ -84,7 +85,7 @@ pub fn run(
             frame.head,
             frame.eyes,
             poses.grip,
-            qrustcraft_vr::Vec3::ZERO,
+            qrustcraft_vr::DVec3::ZERO,
             0.05,
             512.0,
             Depth::ReversedZeroToOne,

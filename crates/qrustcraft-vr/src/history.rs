@@ -3,15 +3,18 @@
 //! Vivecraft stamps samples with wall-clock time per poll, so its gesture thresholds drift with
 //! frame rate. Here every sample carries *simulation* time advanced by explicit `dt`, so a
 //! "speed over 0.33 s" means the same at 72 Hz and 120 Hz, and tests are deterministic.
+//!
+//! The clock is `f64`: it only ever grows, and an `f32` one loses a frame's worth of precision
+//! within hours (at 2^17 s its step is 1/64 s), which would quantise every speed it measures.
 
 use crate::Vec3;
 use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
 pub struct History {
-    samples: VecDeque<(f32, Vec3)>,
-    now: f32,
-    keep: f32,
+    samples: VecDeque<(f64, Vec3)>,
+    now: f64,
+    keep: f64,
 }
 
 impl History {
@@ -20,12 +23,12 @@ impl History {
         Self {
             samples: VecDeque::new(),
             now: 0.0,
-            keep: keep_secs,
+            keep: f64::from(keep_secs),
         }
     }
 
     pub fn push(&mut self, dt: f32, v: Vec3) {
-        self.now += dt;
+        self.now += f64::from(dt);
         self.samples.push_back((self.now, v));
         while self
             .samples
@@ -36,12 +39,17 @@ impl History {
         }
     }
 
+    /// Forget every sample (tracking was lost: motion across the gap is not real motion).
+    pub fn clear(&mut self) {
+        self.samples.clear();
+    }
+
     pub fn latest(&self) -> Option<Vec3> {
         self.samples.back().map(|s| s.1)
     }
 
-    fn window(&self, secs: f32) -> impl Iterator<Item = &(f32, Vec3)> {
-        let from = self.now - secs;
+    fn window(&self, secs: f32) -> impl Iterator<Item = &(f64, Vec3)> {
+        let from = self.now - f64::from(secs);
         self.samples.iter().filter(move |(t, _)| *t >= from)
     }
 
@@ -69,7 +77,7 @@ impl History {
             return 0.0;
         }
         let path: f32 = pts.windows(2).map(|w| (w[1].1 - w[0].1).length()).sum();
-        let dt = pts[pts.len() - 1].0 - pts[0].0;
+        let dt = (pts[pts.len() - 1].0 - pts[0].0) as f32;
         if dt > 0.0 { path / dt } else { 0.0 }
     }
 
@@ -112,6 +120,27 @@ mod tests {
             h.push(1.0 / 90.0, h.latest().unwrap()); // stop
         }
         assert!(h.average_speed(0.33) < 1e-4);
+    }
+
+    #[test]
+    fn speed_stays_exact_after_hours_of_play() {
+        let mut h = History::new(1.0);
+        h.push(6.0 * 3600.0, Vec3::ZERO); // six hours in
+        let dt = 1.0 / 90.0;
+        for k in 1..=90 {
+            h.push(dt, Vec3::new(3.0 * k as f32 * dt, 0.0, 0.0));
+        }
+        let s = h.average_speed(0.33);
+        assert!((s - 3.0).abs() < 0.05, "{s}");
+    }
+
+    #[test]
+    fn clear_forgets_motion() {
+        let mut h = run(90.0, 0.5, 5.0);
+        h.clear();
+        assert!(h.latest().is_none());
+        h.push(1.0 / 90.0, Vec3::new(100.0, 0.0, 0.0));
+        assert_eq!(h.average_speed(0.33), 0.0);
     }
 
     #[test]
