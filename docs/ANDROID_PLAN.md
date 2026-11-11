@@ -8,7 +8,7 @@ a Quest 3 with no PC attached.
 | Stage | Result | State |
 |---|---|---|
 | 1. Smoke APK | An APK that opens an OpenXR session on the Quest, clears each eye to a colour, and buzzes a controller on trigger. Proves OpenXR + Vulkan + wgpu + Touch input on the device, with no Minecraft code | **Built and signed** (`target/qrustcraft-quest.apk`, inspected: arm64, correct entry point, loader bundled); **not yet run on a headset** |
-| 2. Horizon on Android | Horizon's game loop runs in a NativeActivity with its own files | Type-checks for Android with 4 small patches; entry point, full link and device run still to do |
+| 2a. Horizon on Android | Horizon's game loop runs in a NativeActivity with its own files, as a flat panel | **APK built and signed** (release, stripped, 35 MB; arm64; entry point exported); **never run on a device** |
 | 3. VR integration | Stereo views, hands, input, GUI panel (`INTEGRATION.md`) | Designed; core logic done and tested |
 | 4. Quest performance | Playable frame rate on Adreno (Quest 3) | Not started |
 
@@ -57,8 +57,9 @@ Still to do for stage 2 (type-checking is not linking or running):
 1. **Entry point.** Done in `patches/horizon/0002`: `entry::event_loop()` (winit `with_android_app` on
    Android) used by the three screens that built their own loop, and `entry::run_android(app)`, which
    enters the app's files folder and starts the game. `app/` is the cdylib that calls it.
-2. **Full compile and link.** A real `cargo ndk build` (codegen plus C dependencies such as `ring`
-   and `mimalloc`) of the whole game: in progress.
+2. **Full compile and link.** Done: a release build of the whole game links for `aarch64-linux-android`.
+   One fix was needed outside the source: build for API 29, because `libaaudio` (Horizon's audio) does
+   not exist at cargo-ndk's default API 21.
 3. **No Java on a Quest.** `horizon-prepare` runs Mojang's exporters through a JDK. Plan: prepare on
    your PC with Horizon's launcher or `horizon-prepare` (using *your* copy of Minecraft), then
    `tools/push-game-files.sh` copies the result into the app's folder over adb. Mojang's files are never

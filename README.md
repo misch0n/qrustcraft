@@ -23,7 +23,7 @@ does instead, with a status per step.
 | `qrustcraft-quest`: NativeActivity app that runs the smoke test on the headset (stage 1 APK) | **APK built and signed**, inspected; **not yet run on a headset** |
 | APK packaging: manifest, `tools/build-apk.sh` | Works (produced the APK); `tools/push-game-files.sh` untested |
 | Horizon integration (stereo `ViewSet`, VR input, GUI panel) | Designed, see [docs/INTEGRATION.md](docs/INTEGRATION.md); not started |
-| Horizon on Android | Game library **type-checks for Android** with 4 small patches in `patches/horizon/`; entry point, full link and device run still to do. See [docs/ANDROID_PLAN.md](docs/ANDROID_PLAN.md) |
+| Horizon on Android (stage 2a) | **APK built and signed** (`tools/build-apk.sh horizon`, 35 MB): the whole game links for Android with 2 small patches in `patches/horizon/`. Opens as a flat panel on Quest, not VR. **Never run on a device.** See [docs/ANDROID_PLAN.md](docs/ANDROID_PLAN.md) |
 
 Nothing here has touched real XR hardware yet. Run `stereo_smoke` first; it is the cheapest way to
 find out whether the headset stack works on your machine.
