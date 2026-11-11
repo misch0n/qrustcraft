@@ -1,12 +1,12 @@
 # Installing on a Quest 3
 
 1. Turn on **Developer Mode** for your headset (Meta Horizon phone app > Devices > Headset settings).
-2. Get the APK: build it with `tools/build-apk.sh` (see `docs/ANDROID_PLAN.md` for prerequisites), or
-   download a release build once there is one. The file is `target/qrustcraft-quest.apk`.
+2. Get the APK: build it with `tools/build-apk.sh smoke` (or `horizon`; see `docs/ANDROID_PLAN.md` for prerequisites), or
+   download a release build once there is one. The file is `target/qrustcraft-smoke.apk` (or `-horizon.apk`).
 3. Install it, either way:
    - **SideQuest**: connect the headset by USB, allow USB debugging in the headset, then drag the APK
      into SideQuest (or use its *Install APK file* button).
-   - **adb**: `adb install -r target/qrustcraft-quest.apk`.
+   - **adb**: `adb install -r target/qrustcraft-smoke.apk`.
 4. Launch it from the headset: **Library > Unknown Sources > QRustCraft**.
 
 ## Stage 1 (smoke) behaviour
