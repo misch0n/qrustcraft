@@ -21,6 +21,9 @@ version-specific mod sets, and a performance guide (render distance 4-6, resolut
 The remaining hard part is real and is the same one QuestCraft solved: **fitting the game's
 rendering and input to a headset**. That is what this repository does.
 
+See [VIVECRAFT_STEPS.md](VIVECRAFT_STEPS.md) for the step-by-step inventory of what Vivecraft
+had to do and the improvement made to each.
+
 ## Principles
 
 1. **Engine-agnostic core.** `qrustcraft-vr` has no GPU, OS or OpenXR dependency, so all VR logic

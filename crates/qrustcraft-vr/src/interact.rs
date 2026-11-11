@@ -155,3 +155,163 @@ mod tests {
         }
     }
 }
+
+// ---------------------------------------------------------------------------------------------
+// Windowed swing tracking and per-class reach (Vivecraft's SwingTracker, on fixed-step history).
+
+use crate::history::History;
+
+/// What the hand holds, for how far its hits reach.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolClass {
+    /// Swords, lances, anything weapon-shaped.
+    Weapon,
+    /// Pickaxes, axes, shovels, hoes.
+    Tool,
+    /// Everything else a hand can hold.
+    Other,
+    Empty,
+}
+
+impl ToolClass {
+    /// Distance from the hand a hit can land, metres, for an arm of `arm_length` (Vivecraft's
+    /// measured defaults: about 2.5, 1.55, 0.4, 0.3 for a 0.7 m arm). Scaling by the real arm
+    /// replaces its fixed constants, so a child's sword is shorter-reaching and the world feels
+    /// proportionate.
+    pub fn reach(self, arm_length: f32) -> f32 {
+        let base = match self {
+            ToolClass::Weapon => 2.5,
+            ToolClass::Tool => 1.55,
+            ToolClass::Other => 0.4,
+            ToolClass::Empty => 0.3,
+        };
+        base * (arm_length / 0.7)
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SwingTrackConfig {
+    /// Tip speed (m/s) averaged over `window` that counts as a swing (Vivecraft: 2.5).
+    pub speed: f32,
+    pub window: f32,
+    /// How far ahead of the hand the tracked tip sits (Vivecraft: 0.3 m).
+    pub tip_offset: f32,
+    pub cooldown: f32,
+    /// Creative mode needs a harder swing (x1.5), so block-breaking isn't accidental.
+    pub creative_factor: f32,
+}
+
+impl Default for SwingTrackConfig {
+    fn default() -> Self {
+        Self {
+            speed: 2.5,
+            window: 0.33,
+            tip_offset: 0.3,
+            cooldown: 0.25,
+            creative_factor: 1.5,
+        }
+    }
+}
+
+/// One hand's swing tracker. Feed room-space (not world-space) hand poses so rig motion never
+/// counts as a swing.
+#[derive(Debug)]
+pub struct SwingTracker {
+    tip: History,
+    cooldown_left: f32,
+}
+
+impl Default for SwingTracker {
+    fn default() -> Self {
+        Self {
+            tip: History::new(0.6),
+            cooldown_left: 0.0,
+        }
+    }
+}
+
+/// A registered swing.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Swing {
+    pub speed: f32,
+    /// Extra hold-ticks worth of mining damage: 3 + min(speed - threshold, 4), like Vivecraft,
+    /// but returned as a number for the game to apply instead of faking repeated clicks.
+    pub mining_hits: f32,
+}
+
+impl SwingTracker {
+    pub fn update(
+        &mut self,
+        cfg: &SwingTrackConfig,
+        dt: f32,
+        hand_room: &Pose,
+        creative: bool,
+    ) -> Option<Swing> {
+        self.cooldown_left = (self.cooldown_left - dt).max(0.0);
+        self.tip.push(
+            dt,
+            hand_room.position + hand_room.forward() * cfg.tip_offset,
+        );
+        let threshold = cfg.speed * if creative { cfg.creative_factor } else { 1.0 };
+        let speed = self.tip.average_speed(cfg.window);
+        if speed > threshold && self.cooldown_left == 0.0 {
+            self.cooldown_left = cfg.cooldown;
+            return Some(Swing {
+                speed,
+                mining_hits: 3.0 + (speed - threshold).min(4.0),
+            });
+        }
+        None
+    }
+}
+
+#[cfg(test)]
+mod swing_tests {
+    use super::*;
+    use crate::Quat;
+
+    fn swing_at(speed: f32, hz: f32, creative: bool) -> Option<Swing> {
+        let (cfg, mut t) = (SwingTrackConfig::default(), SwingTracker::default());
+        let dt = 1.0 / hz;
+        let mut hit = None;
+        for k in 0..(0.5 * hz) as usize {
+            let p = Pose::new(Vec3::new(speed * k as f32 * dt, 0.0, 0.0), Quat::IDENTITY);
+            hit = hit.or(t.update(&cfg, dt, &p, creative));
+        }
+        hit
+    }
+
+    #[test]
+    fn a_fast_swing_registers_at_any_refresh_rate() {
+        for hz in [72.0, 90.0, 120.0] {
+            assert!(swing_at(4.0, hz, false).is_some(), "{hz} Hz");
+        }
+    }
+
+    #[test]
+    fn slow_waving_does_not() {
+        assert!(swing_at(1.0, 90.0, false).is_none());
+    }
+
+    #[test]
+    fn creative_needs_a_harder_swing() {
+        assert!(swing_at(3.0, 90.0, false).is_some());
+        assert!(swing_at(3.0, 90.0, true).is_none());
+        assert!(swing_at(4.5, 90.0, true).is_some());
+    }
+
+    #[test]
+    fn harder_swings_mine_more_up_to_a_cap() {
+        let soft = swing_at(3.0, 90.0, false).unwrap().mining_hits;
+        let hard = swing_at(20.0, 90.0, false).unwrap().mining_hits;
+        assert!(hard > soft && hard <= 7.0);
+    }
+
+    #[test]
+    fn reach_scales_with_arm_and_class() {
+        assert!(ToolClass::Weapon.reach(0.7) > ToolClass::Tool.reach(0.7));
+        assert!(ToolClass::Tool.reach(0.7) > ToolClass::Other.reach(0.7));
+        assert!(ToolClass::Weapon.reach(0.5) < ToolClass::Weapon.reach(0.8));
+        assert!((ToolClass::Weapon.reach(0.7) - 2.5).abs() < 1e-6);
+    }
+}

@@ -8,11 +8,16 @@
 //! Coordinates: the game world is Minecraft's (+X east, +Y up, +Z south, yaw 0 faces +Z, yaw grows
 //! clockwise seen from above). OpenXR is +X right, +Y up, -Z forward. See [`coords`].
 
+pub mod bow;
+pub mod climb;
 pub mod comfort;
 pub mod coords;
 pub mod haptics;
+pub mod history;
 pub mod input;
 pub mod interact;
+pub mod pose_net;
+pub mod posture;
 pub mod projection;
 pub mod rig;
 pub mod teleport;

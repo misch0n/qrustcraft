@@ -8,11 +8,15 @@ It does what [QuestCraft](https://github.com/QuestCraftPlusPlus/QuestCraft) does
 Java game on Android and translates its OpenGL calls; here the game is already native Rust on
 Vulkan, and OpenXR plugs straight into it. See [docs/DESIGN.md](docs/DESIGN.md).
 
+The design starts from Vivecraft's own steps: [docs/VIVECRAFT_STEPS.md](docs/VIVECRAFT_STEPS.md)
+lists each thing Vivecraft had to do to make Minecraft VR, its weaknesses, and what this project
+does instead, with a status per step.
+
 ## Status: foundation, not yet playable
 
 | Piece | State |
 |---|---|
-| `qrustcraft-vr`: stereo projection (asymmetric, reversed-Z), room-scale rig, snap/smooth turn, locomotion, teleport arc, swing-to-mine, floating GUI panel, haptics, comfort vignette | Done, 44 unit tests |
+| `qrustcraft-vr`: stereo projection (asymmetric, reversed-Z), room-scale rig, snap/smooth turn, locomotion, teleport arc, swing-to-mine and per-tool reach, bow, climbing, physical sneak/crawl/jump, floating GUI panel, haptics, comfort vignette, pose network format with server hit validation | Done, 71 unit tests |
 | `qrustcraft-xr`: OpenXR instance, Touch actions, frame loop | Compiles; **not yet run on a headset** |
 | `qrustcraft-xr` `wgpu-bridge`: OpenXR-created Vulkan device and swapchain images exposed to wgpu 30 | Compiles against wgpu 30.0.1; **not yet run on a headset** |
 | `stereo_smoke` example: end-to-end headset check with no Minecraft | Compiles; **not yet run on a headset** |
