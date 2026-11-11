@@ -1,6 +1,6 @@
 # Integrating into Horizon
 
-Pinned reference: `third_party/horizon` at `5070174` (2026-11-10). Paths are relative to
+Pinned reference: Horizon at `5070174` (`third_party/horizon.pin`) (2026-11-10). Paths are relative to
 `crates/horizon-client-render/src/` unless noted.
 
 ## The seam already exists

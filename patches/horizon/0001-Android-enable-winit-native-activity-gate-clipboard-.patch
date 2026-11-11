@@ -1,7 +1,7 @@
 From a835a693001bea881bd8365459f68f45d866343d Mon Sep 17 00:00:00 2001
 From: qrustcraft <noreply@example.com>
 Date: Wed, 11 Nov 2026 01:32:02 +0000
-Subject: [PATCH] Android: enable winit native-activity, gate clipboard and
+Subject: [PATCH 1/2] Android: enable winit native-activity, gate clipboard and
  layout learning, fix shadowed variable in cem.rs
 
 - horizon-client: winit with android-native-activity on target_os=android

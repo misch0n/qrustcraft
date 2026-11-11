@@ -1,3 +1,0 @@
-[submodule "third_party/horizon"]
-	path = third_party/horizon
-	url = https://github.com/horizon-rust/horizon.git

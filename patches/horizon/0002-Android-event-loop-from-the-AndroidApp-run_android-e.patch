@@ -1,0 +1,124 @@
+From 13f30fd97bb2ecf1ffd37a8f681c612e32be8f3f Mon Sep 17 00:00:00 2001
+From: qrustcraft <noreply@example.com>
+Date: Wed, 11 Nov 2026 01:40:56 +0000
+Subject: [PATCH 2/2] Android: event loop from the AndroidApp, run_android
+ entry point
+
+- entry::event_loop() builds the winit event loop (with_android_app on Android, EventLoop::new elsewhere); the three screens that created their own now call it
+- entry::run_android(app) enters the app's external files folder (the game folder) and starts the game
+- drop the now-unused EventLoop import in game.rs
+---
+ crates/horizon-client/src/entry.rs            | 41 +++++++++++++++++++
+ crates/horizon-client/src/game.rs             |  2 +-
+ .../horizon-client/src/game/loading_screen.rs |  2 +-
+ .../horizon-client/src/game/no_resources.rs   |  2 +-
+ .../src/game/resource_loader.rs               |  2 +-
+ 5 files changed, 45 insertions(+), 4 deletions(-)
+
+diff --git a/crates/horizon-client/src/entry.rs b/crates/horizon-client/src/entry.rs
+index b56d910..9752dda 100644
+--- a/crates/horizon-client/src/entry.rs
++++ b/crates/horizon-client/src/entry.rs
+@@ -6,6 +6,47 @@ pub fn main() {
+     main_with(Default::default());
+ }
+ 
++/// The Android app handle (`android_main`'s), kept for the event loop every screen builds.
++#[cfg(target_os = "android")]
++pub static ANDROID_APP: std::sync::OnceLock<winit::platform::android::activity::AndroidApp> =
++    std::sync::OnceLock::new();
++
++/// The event loop each screen runs on. winit builds one from the `AndroidApp` on Android and
++/// from the display server elsewhere.
++pub fn event_loop() -> Result<winit::event_loop::EventLoop<()>, winit::error::EventLoopError> {
++    #[cfg(target_os = "android")]
++    {
++        use winit::platform::android::EventLoopBuilderExtAndroid;
++        let app = ANDROID_APP
++            .get()
++            .expect("`run_android` stores the app before the first screen")
++            .clone();
++        winit::event_loop::EventLoop::builder()
++            .with_android_app(app)
++            .build()
++    }
++    #[cfg(not(target_os = "android"))]
++    {
++        winit::event_loop::EventLoop::new()
++    }
++}
++
++/// Start the game from an Android `NativeActivity`. The game folder is the app's own external
++/// files folder (`Android/data/<package>/files`): saves, `options.txt` and the prepared game
++/// files (`.local/horizon-client/26.3`, pushed from a PC) are all relative to the working
++/// directory.
++#[cfg(target_os = "android")]
++pub fn run_android(app: winit::platform::android::activity::AndroidApp) {
++    if let Some(dir) = app.external_data_path() {
++        let _ = std::fs::create_dir_all(&dir);
++        if let Err(err) = std::env::set_current_dir(&dir) {
++            log::error!("cannot enter {}: {err}", dir.display());
++        }
++    }
++    let _ = ANDROID_APP.set(app);
++    main();
++}
++
+ /// Start the game with trait mods in dispatch order.
+ pub fn main_with(mods: crate::mod_api::Mods) {
+     // First: a trait injection into anything below (logging, the crash handler) calls its mod.
+diff --git a/crates/horizon-client/src/game.rs b/crates/horizon-client/src/game.rs
+index 9d6b3f7..f03257d 100644
+--- a/crates/horizon-client/src/game.rs
++++ b/crates/horizon-client/src/game.rs
+@@ -614,7 +614,7 @@ use winit::{
+     application::ApplicationHandler,
+     error::EventLoopError,
+     event::{DeviceEvent, DeviceId, ElementState, MouseButton, MouseScrollDelta, WindowEvent},
+-    event_loop::{ActiveEventLoop, ControlFlow, EventLoop},
++    event_loop::{ActiveEventLoop, ControlFlow},
+     keyboard::{KeyCode, PhysicalKey},
+     window::{CursorGrabMode, Window, WindowId},
+ };
+diff --git a/crates/horizon-client/src/game/loading_screen.rs b/crates/horizon-client/src/game/loading_screen.rs
+index 00d3a90..36a4605 100644
+--- a/crates/horizon-client/src/game/loading_screen.rs
++++ b/crates/horizon-client/src/game/loading_screen.rs
+@@ -29,7 +29,7 @@ pub(super) fn run_event_loop(mut game: Game<'_>) -> Result<()> {
+         return game.error.take().map_or(Ok(()), Err);
+     }
+     let mut split = split::Split::new(game);
+-    let result = EventLoop::new()?.run_app(&mut split);
++    let result = crate::entry::event_loop()?.run_app(&mut split);
+     game = split.host;
+     narrator::stop();
+     leave_fullscreen_after(&result, &mut game.settings);
+diff --git a/crates/horizon-client/src/game/no_resources.rs b/crates/horizon-client/src/game/no_resources.rs
+index 299223a..a564733 100644
+--- a/crates/horizon-client/src/game/no_resources.rs
++++ b/crates/horizon-client/src/game/no_resources.rs
+@@ -32,7 +32,7 @@ pub(super) fn show(looked_in: &std::path::Path, settings: &Settings) -> Result<(
+         error: None,
+     };
+     horizon_client::hud::GUI_SCALE.store(settings.gui_scale, Ordering::Relaxed);
+-    EventLoop::new()?.run_app(&mut app)?;
++    crate::entry::event_loop()?.run_app(&mut app)?;
+     app.error.map_or(Ok(()), Err)
+ }
+ 
+diff --git a/crates/horizon-client/src/game/resource_loader.rs b/crates/horizon-client/src/game/resource_loader.rs
+index 75e87a3..d1fc8e2 100644
+--- a/crates/horizon-client/src/game/resource_loader.rs
++++ b/crates/horizon-client/src/game/resource_loader.rs
+@@ -298,7 +298,7 @@ pub(super) fn run_loading(
+         error: None,
+     };
+     let mut app = App::Loading(Box::new(loading));
+-    let result = EventLoop::new()?.run_app(&mut app);
++    let result = crate::entry::event_loop()?.run_app(&mut app);
+     narrator::stop();
+     match &mut app {
+         // Ready: splitscreen around P1's game.
+-- 
+2.43.0
+

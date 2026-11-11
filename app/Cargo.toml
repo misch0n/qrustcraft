@@ -1,0 +1,34 @@
+# Separate workspace root: it needs Horizon's [patch] entries and a checked-out third_party/horizon
+# (tools/setup-horizon.sh). The main workspace builds without either.
+[workspace]
+
+[package]
+name = "qrustcraft-horizon-quest"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "Horizon (Rust Minecraft) as an Android/Quest NativeActivity app."
+
+[lib]
+name = "qrustcraft_horizon"
+crate-type = ["cdylib"]
+
+[target.'cfg(target_os = "android")'.dependencies]
+horizon-client = { path = "../third_party/horizon/crates/horizon-client", default-features = false, features = ["audio", "horizon-extras"] }
+winit = { version = "0.30.13", features = ["android-native-activity"] }
+android_logger = "0.15"
+log = "0.4"
+
+# The same patched crates Horizon's own workspace root uses.
+[patch.crates-io]
+wgpu-hal = { path = "../third_party/horizon/third_party/wgpu-hal" }
+naga = { path = "../third_party/horizon/third_party/naga" }
+libmimalloc-sys = { path = "../third_party/horizon/third_party/libmimalloc-sys" }
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.release]
+opt-level = 3
+lto = false
+codegen-units = 16

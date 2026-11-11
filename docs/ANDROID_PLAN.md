@@ -15,6 +15,25 @@ a Quest 3 with no PC attached.
 Stage 1 is deliberately first: it is small, it needs none of Horizon, and it answers the biggest
 unknown (does the XR stack work on the device) cheaply. Everything after it builds on a proven base.
 
+## Is there an existing solution?
+
+Checked (read-only; nothing from these was built or run):
+
+- **Upstream Horizon** has no Android or Quest build. Its roadmap lists Android as a long-term goal
+  with no official build; its Android input modules are adapted from the Starling project.
+- **Horizont** (`rafw22/horizon-fork-horizont`, a community fork) *says* it has native OpenXR and
+  Quest standalone support. The code does not back that up: its `horizont-vr` crate is about 900
+  lines of types, math and flags, with no OpenXR session, swapchain or frame loop, nothing that
+  renders stereo, and no Android entry point; the game only reads and writes its flags. Treat the
+  README's Quest claims as unverified. Its pose-sync idea (`horizont:vr_pose`) is similar to our
+  `pose_net`.
+- Reports of Horizon "running on Quest 3" most likely mean desktop Horizon streamed through
+  Quest Link, Air Link or Virtual Desktop (a 2D window, or a PCVR route), which needs no port.
+  If you have a link to a specific video or build, send it and I will check it.
+
+So the work in this repo is not duplicating a finished solution. Stage 2a below (Horizon as a plain
+Android app) is the first thing that would let it run on the headset by itself.
+
 ## Stage 2: what stands between Horizon and Android
 
 Measured, not guessed: Horizon at `5070174` was type-checked for `aarch64-linux-android` with the
@@ -35,10 +54,9 @@ off, which a VR build wants anyway (controllers come from OpenXR). The 262k-line
 
 Still to do for stage 2 (type-checking is not linking or running):
 
-1. **Entry point.** Horizon's `main()` is a desktop executable. Android needs `android_main`
-   (`qrustcraft-quest`) that stores the `AndroidApp`, sets the working directory to the app's files
-   folder, and calls `entry::main_with`. Horizon's three `EventLoop::new()` call sites must use
-   `with_android_app(app)` on Android (winit panics otherwise).
+1. **Entry point.** Done in `patches/horizon/0002`: `entry::event_loop()` (winit `with_android_app` on
+   Android) used by the three screens that built their own loop, and `entry::run_android(app)`, which
+   enters the app's files folder and starts the game. `app/` is the cdylib that calls it.
 2. **Full compile and link.** A real `cargo ndk build` (codegen plus C dependencies such as `ring`
    and `mimalloc`) of the whole game: in progress.
 3. **No Java on a Quest.** `horizon-prepare` runs Mojang's exporters through a JDK. Plan: prepare on

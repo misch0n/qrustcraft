@@ -2,3 +2,4 @@
 .local/
 *.apk
 *.aab
+/third_party/horizon/
